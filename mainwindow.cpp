@@ -4,26 +4,40 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
+#include <QMessageBox>
 #include<QJsonDocument>
 #include <QJsonObject>
+#include <QVector>
 
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , modelScene(new QGraphicsScene)
+    , zoomScale(100)
 {
     ui->setupUi(this);
+
+    ui->modelGraphicsView->setScene(modelScene);
+
     connect(ui->spaceComboBox, &QComboBox::currentTextChanged, this, &MainWindow::spaceChanged);
     connect(ui->modelComboBox, &QComboBox::currentTextChanged, this, &MainWindow::modelChanged);
+
     connect(ui->savePushButton, &QPushButton::clicked, this, &MainWindow::save);
+    connect(ui->loadPushButton, &QPushButton::clicked, this, &MainWindow::load);
 
     connect(ui->parameter1LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
     connect(ui->parameter2LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
     connect(ui->modelComboBox, &QComboBox::currentTextChanged, this, &MainWindow::drawModel);
+
+    connect(ui->zoomInToolButton, &QToolButton::clicked, this, &MainWindow::zoomIn);
+    connect(ui->zoomOutToolButton, &QToolButton::clicked, this, &MainWindow::zoomOut);
 }
 
 MainWindow::~MainWindow()
 {
+    delete modelScene;
     delete ui;
 }
 
@@ -37,7 +51,13 @@ void MainWindow::spaceChanged(const QString &space)
         ui->modelComboBox->addItem("U");
         ui->modelComboBox->addItem("B");
     }
-    ui->modelComboBox->setEnabled(true);
+
+    if (space == "Select"){
+        ui->modelComboBox->setDisabled(true);
+    }
+    else{
+        ui->modelComboBox->setEnabled(true);
+    }
 
 }
 
@@ -55,9 +75,7 @@ void MainWindow::modelChanged(const QString &model)
 }
 
 void MainWindow::save(){
-
-    QJsonObject inputs = *(new QJsonObject());
-
+    QJsonObject inputs;
     inputs["Space"] = ui->spaceComboBox->currentText();
     inputs["Units"] = ui->unitsComboBox->currentText();
     inputs["Model"] = ui->modelComboBox->currentText();
@@ -66,13 +84,14 @@ void MainWindow::save(){
 
     QDir mdir;
     QString path = "D:/dialog_files/";
-    if (mdir.exists(path)){
+    if (!mdir.exists(path)){
         mdir.mkpath(path);
     }
 
-    QFile input_save("D:/test/inputs.json");
+    QFile input_save(QFileDialog::getSaveFileName(this, QString(), path));
 
     if (!input_save.open(QIODevice::WriteOnly)){
+        QMessageBox::warning(this, "Save failed", path + "inputs.json could not be opened for writing.");
         return;
     }
     //Saves inputs to the file input_save by converting to QJsonDocument and then QByteArray.
@@ -80,37 +99,105 @@ void MainWindow::save(){
     input_save.close();
 }
 
+void MainWindow::load(){
+    QDir mdir;
+    QString path = "D:/dialog_files/";
+    if (!mdir.exists(path)){
+        mdir.mkpath(path);
+    }
+
+    QString filepath = QFileDialog::getOpenFileName(this, QString(), path);
+    QFile inputs_file(filepath);
+
+    if (!inputs_file.open(QIODevice::ReadOnly)){
+        QMessageBox::warning(this, "Load failed", "File could not be opened for reading.");
+        return;
+    }
+
+    QByteArray inputs_json = inputs_file.readAll();
+
+    QJsonObject inputs = QJsonDocument::fromJson(inputs_json).object();
+
+    for (const QString &key : {"Space", "Units", "Model", "Parameter 1", "Parameter 2"}){
+        if (!inputs.contains(key)){
+            QMessageBox::warning(this, "Invalid inputs file", "File did not have a value for parameter " + key + ".");
+            return;
+        }
+    }
+
+    ui->spaceComboBox->setCurrentText(inputs["Space"].toString());
+    ui->unitsComboBox->setCurrentText(inputs["Units"].toString());
+    ui->modelComboBox->setCurrentText(inputs["Model"].toString());
+    ui->parameter1LineEdit->setText(inputs["Parameter 1"].toString());
+    ui->parameter2LineEdit->setText(inputs["Parameter 2"].toString());
+    drawModel();
+    inputs_file.close();
+}
+
 void MainWindow::drawModel(){
     //clear the window
 
-    ui->modelGraphicsView->scene()->clear();
+    modelScene->clear();
 
     float p1 = ui->parameter1LineEdit->text().toFloat();
     float p2 = ui->parameter2LineEdit->text().toFloat();
 
-    //rescale p1 and p2
-    p1 /= std::max(p1, p2);
-    p2 /= std::max(p1, p2);
+    float scalingFactor = 300 / fmax(p1, p2);
+    p1 *= scalingFactor;
+    p2 *= scalingFactor;
+
+    //rescale p1 and p2?
+
+    QColor borderColor = QColor(106,151,201);
+    QColor shadedColor = QColor(114,158,206);
+    QColor litColor = QColor(164,194,225);
 
     if (ui->modelComboBox->currentText() == "U"){
-        //QGraphicsScene::addEllipse();
-        //QGraphicsScene::addEllipse();
+        float angleFactor = 0.25;
+        // p1 = cylinder radius
+        // p2 = cylinder height
+        // draw upright cylinder
+        modelScene->addEllipse(-p1, p2/2 - p1 * angleFactor, 2*p1, 2*p1*angleFactor, QPen(borderColor), QBrush(shadedColor));
+        modelScene->addRect(-p1, -p2/2, 2 * p1, p2, QPen(borderColor), QBrush(shadedColor));
+        modelScene->addEllipse(-p1, -p2/2 - p1 * angleFactor, 2*p1, 2*p1*angleFactor, QPen(borderColor), QBrush(litColor));
 
-        //QGraphicsScene::addRect();
-
-        //draw upright cylinder
     }
     else if (ui->modelComboBox->currentText() == "B"){
-        //QGraphicsScene::addEllipse();
-        //QGraphicsScene::addEllipse();
-
-        //QGraphicsScene::addRect();
+        float angleFactor = 0.25;
+        // p1 = cylinder radius
+        // p2 = cylinder width
         //draw cylinder on its side
+        modelScene->addEllipse(p2/2 -p1*angleFactor, -p1, 2*p1*angleFactor, 2*p1, QPen(borderColor), QBrush(shadedColor));
+        modelScene->addRect(-p2/2, -p1, p2, 2*p1, QPen(borderColor), QBrush(shadedColor));
+        modelScene->addEllipse(-p2/2 -p1*angleFactor, -p1, 2*p1*angleFactor, 2*p1, QPen(borderColor), QBrush(litColor));
+
     }
     else if (ui->modelComboBox->currentText() == "T"){
-        //QGraphicsScene::addEllipse();
-        //QGraphicsScene::addRect();
-        //draw circular cavity in a square
+        // p1 = radius of cavity
+        // p2 = width of square
+        // draw box with cavity
+        modelScene->addRect(-p2/2, -p2/2, p2, p2, QPen(borderColor), QBrush(shadedColor));
+        modelScene->addEllipse(-p1/2, -p1/2, p1, p1, QPen(borderColor), QBrush(QColor("white")));
 
+    }
+    ui->modelGraphicsView->centerOn(0, 0);
+    ui->modelGraphicsView->show();
+}
+
+void MainWindow::zoomIn(){
+    QVector zoomScales({50, 75, 100, 125, 150, 200});
+    if (zoomScale < zoomScales.constLast()){
+        float newScale = zoomScales.at(zoomScales.indexOf(zoomScale) + 1);
+        ui->modelGraphicsView->scale(newScale/zoomScale, newScale/zoomScale);
+        zoomScale = newScale;
+    }
+}
+
+void MainWindow::zoomOut(){
+    QVector zoomScales({50, 75, 100, 125, 150, 200});
+    if (zoomScale > zoomScales.constFirst()){
+        float newScale = zoomScales.at(zoomScales.indexOf(zoomScale) - 1);
+        ui->modelGraphicsView->scale(newScale/zoomScale, newScale/zoomScale);
+        zoomScale = newScale;
     }
 }
