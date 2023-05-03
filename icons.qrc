@@ -2,5 +2,10 @@
     <qresource prefix="/">
         <file>zoom_in.png</file>
         <file>zoom_out.png</file>
+        <file>zoom to extents.jpg</file>
+        <file>draw ellipse tool.png</file>
+        <file>draw rectangle tool.png</file>
+        <file>pan tool.png</file>
+        <file>delete tool.jpg</file>
     </qresource>
 </RCC>

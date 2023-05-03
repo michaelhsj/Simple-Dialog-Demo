@@ -16,6 +16,8 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , modelScene(new QGraphicsScene)
     , zoomScale(100)
+    , modelRect()
+    , toolType(QString("Pan"))
 {
     ui->setupUi(this);
 
@@ -25,7 +27,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->modelComboBox, &QComboBox::currentTextChanged, this, &MainWindow::modelChanged);
 
     connect(ui->savePushButton, &QPushButton::clicked, this, &MainWindow::save);
-    connect(ui->loadPushButton, &QPushButton::clicked, this, &MainWindow::load);
+    connect(ui->loadPushButton, &QPushButton::clicked, this, &MainWindow::open);
+
+    //refactor drawModel and zoom methods into graphicsview/graphicsscene subclasses?
+
+    //refactor zoom into view (let it hold zoomscale), drawmodel into scene?
+    //how will we call zoomtoextents in drawmodel then? call it in mainwindow, which calls smth in graphicsscene?
 
     connect(ui->parameter1LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
     connect(ui->parameter2LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
@@ -33,6 +40,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->zoomInToolButton, &QToolButton::clicked, this, &MainWindow::zoomIn);
     connect(ui->zoomOutToolButton, &QToolButton::clicked, this, &MainWindow::zoomOut);
+    connect(ui->zoomToExtentsToolButton, &QToolButton::clicked, this, &MainWindow::zoomToExtents);
+
+    //give each toolbutton a string for tool name, have them all do the same thing on click?
+    //can add string as property via Design menu.
+    //use enums instead of qstrings because qstrings are heavy?
+
+    connect(ui->panToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
+    connect(ui->drawRectangleToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
+    connect(ui->drawEllipseToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
+    connect(ui->deleteToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
 }
 
 MainWindow::~MainWindow()
@@ -99,7 +116,7 @@ void MainWindow::save(){
     input_save.close();
 }
 
-void MainWindow::load(){
+void MainWindow::open(){
     QDir mdir;
     QString path = "D:/dialog_files/";
     if (!mdir.exists(path)){
@@ -139,8 +156,24 @@ void MainWindow::drawModel(){
 
     modelScene->clear();
 
-    float p1 = ui->parameter1LineEdit->text().toFloat();
-    float p2 = ui->parameter2LineEdit->text().toFloat();
+    bool success1, success2;
+    float p1 = ui->parameter1LineEdit->text().toFloat(&success1);
+    float p2 = ui->parameter2LineEdit->text().toFloat(&success2);
+
+    if (!(success1 && success2)){
+        ui->warningLabel->setEnabled(true);
+        ui->warningLabel->setText("<p style=\"color: red\">All parameters must be numbers.</p>");
+        return;
+    }
+
+    if (p1 < 0 || p2 < 0){
+        ui->warningLabel->setEnabled(true);
+        ui->warningLabel->setText("<p style=\"color: red\">Parameters must be positive numbers.</p>");
+        return;
+    }
+
+    ui->warningLabel->setText("");
+    ui->warningLabel->setDisabled(true);
 
     float scalingFactor = 300 / fmax(p1, p2);
     p1 *= scalingFactor;
@@ -152,6 +185,8 @@ void MainWindow::drawModel(){
     QColor shadedColor = QColor(114,158,206);
     QColor litColor = QColor(164,194,225);
 
+    QPoint TopLeft;
+
     if (ui->modelComboBox->currentText() == "U"){
         float angleFactor = 0.25;
         // p1 = cylinder radius
@@ -161,6 +196,8 @@ void MainWindow::drawModel(){
         modelScene->addRect(-p1, -p2/2, 2 * p1, p2, QPen(borderColor), QBrush(shadedColor));
         modelScene->addEllipse(-p1, -p2/2 - p1 * angleFactor, 2*p1, 2*p1*angleFactor, QPen(borderColor), QBrush(litColor));
 
+        TopLeft.setX(-p1);
+        TopLeft.setY(-p2/2 - p1);
     }
     else if (ui->modelComboBox->currentText() == "B"){
         float angleFactor = 0.25;
@@ -171,6 +208,8 @@ void MainWindow::drawModel(){
         modelScene->addRect(-p2/2, -p1, p2, 2*p1, QPen(borderColor), QBrush(shadedColor));
         modelScene->addEllipse(-p2/2 -p1*angleFactor, -p1, 2*p1*angleFactor, 2*p1, QPen(borderColor), QBrush(litColor));
 
+        TopLeft.setX(-p2/2 -p1*angleFactor);
+        TopLeft.setY(-p1);
     }
     else if (ui->modelComboBox->currentText() == "T"){
         // p1 = radius of cavity
@@ -179,8 +218,16 @@ void MainWindow::drawModel(){
         modelScene->addRect(-p2/2, -p2/2, p2, p2, QPen(borderColor), QBrush(shadedColor));
         modelScene->addEllipse(-p1/2, -p1/2, p1, p1, QPen(borderColor), QBrush(QColor("white")));
 
+        TopLeft.setX(-fmax(p1, p2)/2);
+        TopLeft.setY(-fmax(p1, p2)/2);
     }
-    ui->modelGraphicsView->centerOn(0, 0);
+
+    // We will always place the center of the object at (0, 0), so the bottom right of the shape will
+    // be TopLeft reflected.
+    modelRect.setTopLeft(TopLeft);
+    modelRect.setBottomRight(-TopLeft);
+
+    zoomToExtents();
     ui->modelGraphicsView->show();
 }
 
@@ -201,3 +248,10 @@ void MainWindow::zoomOut(){
         zoomScale = newScale;
     }
 }
+
+void MainWindow::zoomToExtents(){
+    ui->modelGraphicsView->centerOn(0, 0);
+    ui->modelGraphicsView->fitInView(modelRect, Qt::KeepAspectRatio);
+    zoomScale = 100;
+}
+

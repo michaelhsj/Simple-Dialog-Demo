@@ -25,13 +25,16 @@ private slots:
     void spaceChanged(const QString &space);
     void save();
     void drawModel();
-    void load();
+    void open();
     void zoomIn();
     void zoomOut();
+    void zoomToExtents();
 private:
     Ui::MainWindow *ui;
     QGraphicsScene *modelScene;
     float zoomScale;
+    QRectF modelRect;
+    QString toolType;
 };
 
 #endif // MAINWINDOW_H
