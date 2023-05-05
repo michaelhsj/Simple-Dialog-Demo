@@ -1,27 +1,27 @@
-
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "modelview.h"
+#include "modelscene.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QMessageBox>
-#include<QJsonDocument>
+#include <QJsonDocument>
 #include <QJsonObject>
-#include <QVector>
+#include <QMap>
 
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , modelScene(new QGraphicsScene)
-    , zoomScale(100)
-    , modelRect()
-    , toolType(QString("Pan"))
+    , toolButtons()
 {
     ui->setupUi(this);
 
-    ui->modelGraphicsView->setScene(modelScene);
+    ui->modelGraphicsView->setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
+
+    //TODOs: clean up zooming indices in ModelView, introduce panning, drawing and deleting events + slots.
 
     connect(ui->spaceComboBox, &QComboBox::currentTextChanged, this, &MainWindow::spaceChanged);
     connect(ui->modelComboBox, &QComboBox::currentTextChanged, this, &MainWindow::modelChanged);
@@ -29,32 +29,32 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->savePushButton, &QPushButton::clicked, this, &MainWindow::save);
     connect(ui->loadPushButton, &QPushButton::clicked, this, &MainWindow::open);
 
-    //refactor drawModel and zoom methods into graphicsview/graphicsscene subclasses?
-
-    //refactor zoom into view (let it hold zoomscale), drawmodel into scene?
-    //how will we call zoomtoextents in drawmodel then? call it in mainwindow, which calls smth in graphicsscene?
-
     connect(ui->parameter1LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
     connect(ui->parameter2LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
     connect(ui->modelComboBox, &QComboBox::currentTextChanged, this, &MainWindow::drawModel);
 
-    connect(ui->zoomInToolButton, &QToolButton::clicked, this, &MainWindow::zoomIn);
-    connect(ui->zoomOutToolButton, &QToolButton::clicked, this, &MainWindow::zoomOut);
-    connect(ui->zoomToExtentsToolButton, &QToolButton::clicked, this, &MainWindow::zoomToExtents);
+    connect(ui->zoomInToolButton, &QToolButton::clicked, ui->modelGraphicsView, &ModelView::zoomIn);
+    connect(ui->zoomOutToolButton, &QToolButton::clicked, ui->modelGraphicsView, &ModelView::zoomOut);
+    connect(ui->zoomToExtentsToolButton, &QToolButton::clicked, ui->modelGraphicsView, &ModelView::zoomToExtents);
 
-    //give each toolbutton a string for tool name, have them all do the same thing on click?
-    //can add string as property via Design menu.
-    //use enums instead of qstrings because qstrings are heavy?
+    ui->panToolButton->setDisabled(true);
 
-    connect(ui->panToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
-    connect(ui->drawRectangleToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
-    connect(ui->drawEllipseToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
-    connect(ui->deleteToolButton, &QToolButton::clicked, this, &MainWindow::setTool);
+    toolButtons = {{Pan, ui->panToolButton},
+         {DrawRectangle, ui->drawRectangleToolButton},
+         {DrawEllipse, ui->drawEllipseToolButton},
+         {Delete, ui->deleteToolButton}};
+
+    connect(ui->panToolButton, &QToolButton::clicked, this, [this](){setMouseTool(Pan);});
+    connect(ui->drawRectangleToolButton, &QToolButton::clicked, this, [this](){setMouseTool(DrawRectangle);});
+    connect(ui->drawEllipseToolButton, &QToolButton::clicked, this, [this](){setMouseTool(DrawEllipse);});
+    connect(ui->deleteToolButton, &QToolButton::clicked, this, [this](){setMouseTool(Delete);});
+
+    connect(ui->actionUndo, &QAction::triggered, ui->modelGraphicsView, &ModelView::undo);
+    connect(ui->actionRedo, &QAction::triggered, ui->modelGraphicsView, &ModelView::redo);
 }
 
 MainWindow::~MainWindow()
 {
-    delete modelScene;
     delete ui;
 }
 
@@ -98,6 +98,10 @@ void MainWindow::save(){
     inputs["Model"] = ui->modelComboBox->currentText();
     inputs["Parameter 1"] = ui->parameter1LineEdit->text();
     inputs["Parameter 2"] = ui->parameter2LineEdit->text();
+
+
+
+    inputs["Shapes"] = QJsonValue(ui->modelGraphicsView->shapesToJson());
 
     QDir mdir;
     QString path = "D:/dialog_files/";
@@ -147,16 +151,17 @@ void MainWindow::open(){
     ui->modelComboBox->setCurrentText(inputs["Model"].toString());
     ui->parameter1LineEdit->setText(inputs["Parameter 1"].toString());
     ui->parameter2LineEdit->setText(inputs["Parameter 2"].toString());
+
     drawModel();
     inputs_file.close();
 }
 
 void MainWindow::drawModel(){
     //clear the window
-
-    modelScene->clear();
+    ui->modelGraphicsView->getModelScene()->clear();
 
     bool success1, success2;
+
     float p1 = ui->parameter1LineEdit->text().toFloat(&success1);
     float p2 = ui->parameter2LineEdit->text().toFloat(&success2);
 
@@ -175,83 +180,17 @@ void MainWindow::drawModel(){
     ui->warningLabel->setText("");
     ui->warningLabel->setDisabled(true);
 
-    float scalingFactor = 300 / fmax(p1, p2);
-    p1 *= scalingFactor;
-    p2 *= scalingFactor;
+    QString model = ui->modelComboBox->currentText();
 
-    //rescale p1 and p2?
+    ui->modelGraphicsView->getModelScene()->drawModel(model, p1, p2);
 
-    QColor borderColor = QColor(106,151,201);
-    QColor shadedColor = QColor(114,158,206);
-    QColor litColor = QColor(164,194,225);
-
-    QPoint TopLeft;
-
-    if (ui->modelComboBox->currentText() == "U"){
-        float angleFactor = 0.25;
-        // p1 = cylinder radius
-        // p2 = cylinder height
-        // draw upright cylinder
-        modelScene->addEllipse(-p1, p2/2 - p1 * angleFactor, 2*p1, 2*p1*angleFactor, QPen(borderColor), QBrush(shadedColor));
-        modelScene->addRect(-p1, -p2/2, 2 * p1, p2, QPen(borderColor), QBrush(shadedColor));
-        modelScene->addEllipse(-p1, -p2/2 - p1 * angleFactor, 2*p1, 2*p1*angleFactor, QPen(borderColor), QBrush(litColor));
-
-        TopLeft.setX(-p1);
-        TopLeft.setY(-p2/2 - p1);
-    }
-    else if (ui->modelComboBox->currentText() == "B"){
-        float angleFactor = 0.25;
-        // p1 = cylinder radius
-        // p2 = cylinder width
-        //draw cylinder on its side
-        modelScene->addEllipse(p2/2 -p1*angleFactor, -p1, 2*p1*angleFactor, 2*p1, QPen(borderColor), QBrush(shadedColor));
-        modelScene->addRect(-p2/2, -p1, p2, 2*p1, QPen(borderColor), QBrush(shadedColor));
-        modelScene->addEllipse(-p2/2 -p1*angleFactor, -p1, 2*p1*angleFactor, 2*p1, QPen(borderColor), QBrush(litColor));
-
-        TopLeft.setX(-p2/2 -p1*angleFactor);
-        TopLeft.setY(-p1);
-    }
-    else if (ui->modelComboBox->currentText() == "T"){
-        // p1 = radius of cavity
-        // p2 = width of square
-        // draw box with cavity
-        modelScene->addRect(-p2/2, -p2/2, p2, p2, QPen(borderColor), QBrush(shadedColor));
-        modelScene->addEllipse(-p1/2, -p1/2, p1, p1, QPen(borderColor), QBrush(QColor("white")));
-
-        TopLeft.setX(-fmax(p1, p2)/2);
-        TopLeft.setY(-fmax(p1, p2)/2);
-    }
-
-    // We will always place the center of the object at (0, 0), so the bottom right of the shape will
-    // be TopLeft reflected.
-    modelRect.setTopLeft(TopLeft);
-    modelRect.setBottomRight(-TopLeft);
-
-    zoomToExtents();
+    ui->modelGraphicsView->zoomToExtents();
     ui->modelGraphicsView->show();
 }
 
-void MainWindow::zoomIn(){
-    QVector zoomScales({50, 75, 100, 125, 150, 200});
-    if (zoomScale < zoomScales.constLast()){
-        float newScale = zoomScales.at(zoomScales.indexOf(zoomScale) + 1);
-        ui->modelGraphicsView->scale(newScale/zoomScale, newScale/zoomScale);
-        zoomScale = newScale;
-    }
+void MainWindow::setMouseTool(mouseTool mouseTool){
+    ui->modelGraphicsView->setMouseTool(mouseTool);
+    for (QToolButton *button : qAsConst(toolButtons)){
+        button->setEnabled(true);}
+    toolButtons[mouseTool]->setDisabled(true);
 }
-
-void MainWindow::zoomOut(){
-    QVector zoomScales({50, 75, 100, 125, 150, 200});
-    if (zoomScale > zoomScales.constFirst()){
-        float newScale = zoomScales.at(zoomScales.indexOf(zoomScale) - 1);
-        ui->modelGraphicsView->scale(newScale/zoomScale, newScale/zoomScale);
-        zoomScale = newScale;
-    }
-}
-
-void MainWindow::zoomToExtents(){
-    ui->modelGraphicsView->centerOn(0, 0);
-    ui->modelGraphicsView->fitInView(modelRect, Qt::KeepAspectRatio);
-    zoomScale = 100;
-}
-

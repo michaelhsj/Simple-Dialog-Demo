@@ -10,6 +10,9 @@
     <height>600</height>
    </rect>
   </property>
+  <property name="mouseTracking">
+   <bool>false</bool>
+  </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
@@ -196,10 +199,10 @@
              <attribute name="label">
               <string>Page 1</string>
              </attribute>
-             <widget class="QWidget" name="">
+             <widget class="QWidget" name="layoutWidget">
               <property name="geometry">
                <rect>
-                <x>20</x>
+                <x>10</x>
                 <y>0</y>
                 <width>135</width>
                 <height>63</height>
@@ -315,7 +318,11 @@
            </widget>
           </item>
           <item>
-           <widget class="QGraphicsView" name="modelGraphicsView"/>
+           <widget class="ModelView" name="modelGraphicsView">
+            <property name="mouseTracking">
+             <bool>false</bool>
+            </property>
+           </widget>
           </item>
          </layout>
         </item>
@@ -405,6 +412,9 @@
     </property>
     <addaction name="actionSave"/>
     <addaction name="actionOpen"/>
+    <addaction name="separator"/>
+    <addaction name="actionUndo"/>
+    <addaction name="actionRedo"/>
    </widget>
    <addaction name="menuOptions"/>
   </widget>
@@ -419,7 +429,24 @@
     <string>Open</string>
    </property>
   </action>
+  <action name="actionUndo">
+   <property name="text">
+    <string>Undo</string>
+   </property>
+  </action>
+  <action name="actionRedo">
+   <property name="text">
+    <string>Redo</string>
+   </property>
+  </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ModelView</class>
+   <extends>QGraphicsView</extends>
+   <header location="global">modelview.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

@@ -2,8 +2,12 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "modelview.h"
+
 #include <QGraphicsScene>
 #include <QMainWindow>
+#include <QMap>
+#include <QToolButton>
 
 
 
@@ -12,7 +16,6 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
-
 {
     Q_OBJECT
 
@@ -23,18 +26,13 @@ public:
 private slots:
     void modelChanged(const QString &model);
     void spaceChanged(const QString &space);
-    void save();
     void drawModel();
+    void save();
     void open();
-    void zoomIn();
-    void zoomOut();
-    void zoomToExtents();
 private:
     Ui::MainWindow *ui;
-    QGraphicsScene *modelScene;
-    float zoomScale;
-    QRectF modelRect;
-    QString toolType;
+    QMap<mouseTool, QToolButton*> toolButtons;
+    void setMouseTool(mouseTool mouseTool);
 };
 
 #endif // MAINWINDOW_H

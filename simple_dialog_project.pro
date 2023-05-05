@@ -10,10 +10,14 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    modelscene.cpp \
+    modelview.cpp
 
 HEADERS += \
-    mainwindow.h
+    mainwindow.h \
+    modelscene.h \
+    modelview.h
 
 FORMS += \
     mainwindow.ui
