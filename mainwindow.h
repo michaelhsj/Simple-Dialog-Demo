@@ -29,6 +29,7 @@ private slots:
     void drawModel();
     void save();
     void open();
+    void updateZoomButtons();
 private:
     Ui::MainWindow *ui;
     QMap<mouseTool, QToolButton*> toolButtons;

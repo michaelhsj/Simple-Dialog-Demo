@@ -7,5 +7,7 @@
         <file>draw rectangle tool.png</file>
         <file>pan tool.png</file>
         <file>delete tool.jpg</file>
+        <file>select tool.png</file>
+        <file>pencil tool.png</file>
     </qresource>
 </RCC>

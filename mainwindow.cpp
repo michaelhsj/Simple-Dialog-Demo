@@ -33,24 +33,34 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->parameter2LineEdit, &QLineEdit::textEdited, this, &MainWindow::drawModel);
     connect(ui->modelComboBox, &QComboBox::currentTextChanged, this, &MainWindow::drawModel);
 
-    connect(ui->zoomInToolButton, &QToolButton::clicked, ui->modelGraphicsView, &ModelView::zoomIn);
-    connect(ui->zoomOutToolButton, &QToolButton::clicked, ui->modelGraphicsView, &ModelView::zoomOut);
-    connect(ui->zoomToExtentsToolButton, &QToolButton::clicked, ui->modelGraphicsView, &ModelView::zoomToExtents);
+    connect(ui->zoomInToolButton, &QToolButton::clicked, this, [this](){ui->modelGraphicsView->zoomIn();
+                                                                        updateZoomButtons();});
+    connect(ui->zoomOutToolButton, &QToolButton::clicked, this, [this](){ui->modelGraphicsView->zoomOut();
+                                                                        updateZoomButtons();});
+    connect(ui->zoomToExtentsToolButton, &QToolButton::clicked, this, [this](){ui->modelGraphicsView->zoomToExtents();
+                                                                        updateZoomButtons();});
 
     ui->panToolButton->setDisabled(true);
 
-    toolButtons = {{Pan, ui->panToolButton},
-         {DrawRectangle, ui->drawRectangleToolButton},
-         {DrawEllipse, ui->drawEllipseToolButton},
-         {Delete, ui->deleteToolButton}};
+    toolButtons = {{Select, ui->selectToolButton},
+                   {Pan, ui->panToolButton},
+                   {Pencil, ui->pencilToolButton},
+                   {DrawRectangle, ui->drawRectangleToolButton},
+                   {DrawEllipse, ui->drawEllipseToolButton},
+                   {Delete, ui->deleteToolButton}};
 
+    connect(ui->selectToolButton, &QToolButton::clicked, this, [this](){setMouseTool(Select);});
     connect(ui->panToolButton, &QToolButton::clicked, this, [this](){setMouseTool(Pan);});
+    connect(ui->pencilToolButton, &QToolButton::clicked, this, [this](){setMouseTool(Pencil);});
     connect(ui->drawRectangleToolButton, &QToolButton::clicked, this, [this](){setMouseTool(DrawRectangle);});
     connect(ui->drawEllipseToolButton, &QToolButton::clicked, this, [this](){setMouseTool(DrawEllipse);});
     connect(ui->deleteToolButton, &QToolButton::clicked, this, [this](){setMouseTool(Delete);});
 
     connect(ui->actionUndo, &QAction::triggered, ui->modelGraphicsView, &ModelView::undo);
     connect(ui->actionRedo, &QAction::triggered, ui->modelGraphicsView, &ModelView::redo);
+
+    connect(ui->actionSave, &QAction::triggered, this, &MainWindow::save);
+    connect(ui->actionOpen, &QAction::triggered, this, &MainWindow::open);
 }
 
 MainWindow::~MainWindow()
@@ -101,7 +111,7 @@ void MainWindow::save(){
 
 
 
-    inputs["Shapes"] = QJsonValue(ui->modelGraphicsView->shapesToJson());
+    inputs["Shapes"] = ui->modelGraphicsView->shapesToJson();
 
     QDir mdir;
     QString path = "D:/dialog_files/";
@@ -139,7 +149,7 @@ void MainWindow::open(){
 
     QJsonObject inputs = QJsonDocument::fromJson(inputs_json).object();
 
-    for (const QString &key : {"Space", "Units", "Model", "Parameter 1", "Parameter 2"}){
+    for (const QString &key : {"Space", "Units", "Model", "Parameter 1", "Parameter 2", "Shapes"}){
         if (!inputs.contains(key)){
             QMessageBox::warning(this, "Invalid inputs file", "File did not have a value for parameter " + key + ".");
             return;
@@ -153,6 +163,8 @@ void MainWindow::open(){
     ui->parameter2LineEdit->setText(inputs["Parameter 2"].toString());
 
     drawModel();
+    ui->modelGraphicsView->jsonToShapes(inputs["Shapes"].toArray());
+
     inputs_file.close();
 }
 
@@ -193,4 +205,22 @@ void MainWindow::setMouseTool(mouseTool mouseTool){
     for (QToolButton *button : qAsConst(toolButtons)){
         button->setEnabled(true);}
     toolButtons[mouseTool]->setDisabled(true);
+}
+
+void MainWindow::updateZoomButtons(){
+    if (ui->modelGraphicsView->getZoomScale() == ui->modelGraphicsView->zoomScales.constLast()){
+        //if the model view is fully zoomed in
+        ui->zoomInToolButton->setDisabled(true);
+    }
+    else{
+        ui->zoomInToolButton->setEnabled(true);
+    }
+
+    if (ui->modelGraphicsView->getZoomScale() == ui->modelGraphicsView->zoomScales.constFirst()){
+        //if the model view is fully zoomed out
+        ui->zoomOutToolButton->setDisabled(true);
+    }
+    else{
+        ui->zoomOutToolButton->setEnabled(true);
+    }
 }

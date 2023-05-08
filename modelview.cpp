@@ -4,8 +4,7 @@
 #include <QVector>
 #include <tuple>
 #include <QGraphicsRectItem>
-
-
+#include <QJsonObject>
 
 const QVector<float> ModelView::zoomScales = QVector({50.0f, 75.0f, 100.0f, 125.0f, 150.0f, 200.0f});
 
@@ -77,6 +76,19 @@ void ModelView::redo()
 }
 
 void ModelView::setMouseTool(mouseTool mouseTool){
+    if (currentMouseTool != Select && mouseTool == Select){
+        for (int i = 0; i < scene()->items().size(); i++){
+            scene()->items().at(i)->setFlag(QGraphicsItem::ItemIsSelectable, true);
+            scene()->items().at(i)->setFlag(QGraphicsItem::ItemIsMovable, true);
+        }
+    }
+    else if (currentMouseTool == Select && mouseTool != Select){
+        for (int i = 0; i < scene()->items().size(); i++){
+            scene()->items().at(i)->setFlag(QGraphicsItem::ItemIsSelectable, false);
+            scene()->items().at(i)->setFlag(QGraphicsItem::ItemIsMovable, false);
+        }
+    }
+
     currentMouseTool = mouseTool;
 
     if (mouseTool == Pan){
@@ -89,12 +101,12 @@ void ModelView::setMouseTool(mouseTool mouseTool){
     if (currentMouseTool == DrawRectangle || currentMouseTool == DrawEllipse){
         setCursor(Qt::CrossCursor);
     }
-    else{//currentMouseTool == Delete
+    else{
         setCursor(Qt::PointingHandCursor);
     }
 }
 
-ModelScene *ModelView::getModelScene(){
+ModelScene *ModelView::getModelScene() const {
     return modelScene;
 }
 
@@ -104,54 +116,83 @@ void ModelView::mousePressEvent(QMouseEvent *event){
             startCorner = mapToScene(event->pos());
             startShape();
         }
-        if (currentMouseTool == Delete){
+        else if (currentMouseTool == Delete){
             deleteShape();
+        }
+        else if (currentMouseTool == Pencil){
+            drawnPath = scene()->addPath(QPainterPath(mapToScene(event->pos())), QPen(QBrush(Qt::SolidPattern), 20), QBrush(Qt::SolidPattern));
+            pushToHistory(Undo, drawnPath);
+            update();
         }
     }
     QGraphicsView::mousePressEvent(event);
 }
 
 void ModelView::mouseMoveEvent(QMouseEvent *event){
-    if (event->button() == Qt::LeftButton){
-        if (currentMouseTool == DrawRectangle || currentMouseTool == DrawEllipse){
-            endCorner = mapToScene(event->pos());
-            updateShape();
-        }
+    if (currentMouseTool == DrawRectangle || currentMouseTool == DrawEllipse){
+        updateShape(mapToScene(event->pos()));
+    }
+    else if (currentMouseTool == Pencil){
+        drawnPath->path().lineTo(mapToScene(event->pos()));
+        update();
     }
     QGraphicsView::mouseMoveEvent(event);
 }
 
 void ModelView::mouseReleaseEvent(QMouseEvent *event){
-    if (event->button() == Qt::LeftButton){
-        if (currentMouseTool == DrawRectangle || currentMouseTool == DrawEllipse){
-            endCorner = mapToScene(event->pos());
-            updateShape();
-        }
+    if (currentMouseTool == DrawRectangle || currentMouseTool == DrawEllipse){
+        updateShape(mapToScene(event->pos()));
+    }
+    else if (currentMouseTool == Pencil){
+        drawnPath->path().lineTo(mapToScene(event->pos()));
+        update();
     }
     QGraphicsView::mouseReleaseEvent(event);
 }
 
-void ModelView::startShape(){
-    if (currentMouseTool == DrawRectangle){
-        drawnRect = scene()->addRect(QRectF(startCorner, startCorner));
-        pushToHistory(Undo, drawnRect);
-    }
-    else{//currentMouseTool == DrawEllipse
-        drawnEllipse = scene()->addEllipse(QRectF(startCorner, startCorner));
-        pushToHistory(Undo, drawnEllipse);
-    }
+void ModelView::paintEvent(QPaintEvent* event){
+    QGraphicsView::paintEvent(event);
+
+    //QPainter painter(this);
+    //painter.drawPath(drawnPath->path());
 }
 
-void ModelView::updateShape(){
+void ModelView::keyPressEvent(QKeyEvent *event){
+    if (currentMouseTool == Select && event->key() == Qt::Key_Backspace){
+        for (int i = 0; i < scene()->items().size(); i++){
+            QGraphicsItem *shape = scene()->items().at(i);
+            if (shape->isSelected()){
+                scene()->removeItem(shape);
+                pushToHistory(Undo, shape);
+            }
+        }
+    }
+    QGraphicsView::keyPressEvent(event);
+}
+
+void ModelView::startShape(){
     if (currentMouseTool == DrawRectangle){
-        drawnRect->setRect(QRectF(startCorner, endCorner));
-        scene()->update(drawnRect->rect());
-        drawnRect->update();
+        drawnShape = scene()->addRect(QRectF(startCorner, startCorner));
+        pushToHistory(Undo, drawnShape);
     }
     else{//currentMouseTool == DrawEllipse
-        drawnEllipse->setRect(QRectF(startCorner, endCorner));
-        scene()->update(drawnEllipse->rect());
-        drawnEllipse->update();
+        drawnShape = scene()->addEllipse(QRectF(startCorner, startCorner));
+    }
+    pushToHistory(Undo, drawnShape);
+}
+
+void ModelView::updateShape(QPointF endCorner){
+    QGraphicsRectItem *rectangle = dynamic_cast<QGraphicsRectItem *>(drawnShape);
+    if (rectangle){
+        rectangle->setRect(QRectF(startCorner, endCorner));
+        rectangle->update();
+        return;
+    }
+
+    QGraphicsEllipseItem *ellipse = dynamic_cast<QGraphicsEllipseItem *>(drawnShape);
+    if (ellipse){
+        ellipse->setRect(QRectF(startCorner, endCorner));
+        ellipse->update();
     }
 }
 
@@ -186,13 +227,50 @@ QGraphicsItem *ModelView::popFromHistory(editType type){
 }
 
 QJsonArray ModelView::shapesToJson(){
-    for (QGraphicsItem *shape : scene()->items()){
+    QJsonArray shapes;
+    for (int i = 0; i < modelScene->items().size(); i++){
+        QGraphicsItem *shape = scene()->items().at(i);
+        QJsonObject entry;
+
+        if (shape == nullptr){
+            continue;
+        }
 
         if (dynamic_cast<QGraphicsRectItem *>(shape)){
-
+            entry["Shape"] = "Rectangle";
         }
-        else{
-
+        else if (dynamic_cast<QGraphicsEllipseItem *>(shape)){
+            entry["Shape"] = "Ellipse";
         }
+        entry["Left X"] = shape->boundingRect().topLeft().x();
+        entry["Right X"] = shape->boundingRect().bottomRight().x();
+        entry["Top Y"] = shape->boundingRect().topLeft().y();
+        entry["Bottom Y"] = shape->boundingRect().bottomRight().y();
+
+        shapes.push_back(entry);
     }
+    return shapes;
+}
+
+void ModelView::jsonToShapes(QJsonArray shapes){
+    for (const QJsonValue &entry : shapes){
+        QGraphicsItem *shape = nullptr;
+        QRectF boundingRect(QPointF(entry["Left X"].toDouble(), entry["Top Y"].toDouble()),
+                            QPointF(entry["Right X"].toDouble(), entry["Bottom Y"].toDouble()));
+
+        if (entry["Shape"] == "Rectangle"){
+            shape = new QGraphicsRectItem(boundingRect);
+        }
+        else if (entry["Shape"] == "Ellipse"){
+            shape = new QGraphicsEllipseItem(boundingRect);
+        }
+
+        scene()->addItem(shape);
+        scene()->update(boundingRect);
+    }
+}
+
+float ModelView::getZoomScale() const
+{
+    return zoomScale;
 }
